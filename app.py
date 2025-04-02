@@ -8,9 +8,9 @@ import time
 import requests
 
 # Set your OpenAI API key (for your LLM usage)
-os.environ['OPENAI_API_KEY'] = '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'
+os.environ['OPENAI_API_KEY'] = 'OPENAI_API_KEY'
 # Read your Fetch.ai API key from the environment
-FETCHAI_API_KEY = os.getenv('eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3NDU5OTg5OTEsImlhdCI6MTc0MzQwNjk5MSwiaXNzIjoiZmV0Y2guYWkiLCJqdGkiOiJkYWZlN2JiOWQyMDc0MDllMTNjNGZlNDUiLCJzY29wZSI6ImF2Iiwic3ViIjoiZGM4YzE5OWFkYzBhYjRhNjJhMDM2M2QxZjk5NTZlZjc0MjIwNWViNTg3ZjM0MjAwIn0.kuBteY20emUxrYk60K_IclQ17_jBkdNZgj0EnVNfP6G_qVVLEQD-TUOzGz-37ZaCBQaNfLrSzmqKKykQsZ7hhmXRzapoY778XCQETgCek0WvvWp8zLGoQiXE7qw-HqqBL-OeB4vSCC5iE1r89hpkQOkCZ0L-w80J0ekyLCkm7r6Gg4vwvK6kFrRRWHOL4gdCaWzaUdavgDlJFXs4w9tI6Ab4NapWRvKjSWu3cmU0Dx-LGLBE4tC9O_JlUuSX-LzwO2kWd3QwpgIMv_tfaYQb7S4fwvYBZvBGMjl2brfAyIpg1WXoRr-rY1iRoeM7OKSEMLKIlhSG7XUnddaK7o1GVA')
+FETCHAI_API_KEY = os.getenv('FETCHAI_API_KEY')
 
 # Define a prompt template for general health queries
 prompt_template = """
