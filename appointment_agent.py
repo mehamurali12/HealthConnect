@@ -1,55 +1,82 @@
 from uagents import Agent, Context, Model
+import requests  # Changed from aiohttp to requests
+from datetime import datetime, timedelta
 
-# Shared message model for incoming requests
-class Message(Model):
-    query: str
-    response: str = None
+class AppointmentRequest(Model):
+    name: str
+    email: str
+    duration: int
+    startTimeDate: str
 
-# Response model that will be sent back to the CLI
 class AppointmentResponse(Model):
     response: str
 
-# Model for ASI agent request and response
 class ASI1miniRequest(Model):
     query: str
 
 class ASI1miniResponse(Model):
     response: str
 
-# Agent addresses
-ASI_AGENT_ID = "agent1qvn0t4u5jeyewp9l544mykv639szuhq8dhmatrgfuwqphx20n8jn78m9paa"
-CLI_AGENT_ADDRESS = "agent1qv3dag4483k5dv4wkcncy65xpyrq4hgwk6nvuf0xzrhfz33cxaqj6xpg9c7"
 
-# Define the Appointment Agent
-agent = Agent(
-    name="HealthConnectAppointmentAgent",
-    seed="appointment_seed_phrase",
-    port=8010,
-    endpoint=["http://localhost:8010/submit"],
-    mailbox=True
-)
+CAL_API_KEY = "cal_live_46843866d91e4e62cd54764b2fd96654"  
+CAL_EVENT_ID = 2220111     
+CAL_API_URL = "https://api.cal.com/v2/bookings"
 
-# Log on startup
-@agent.on_event("startup")
-async def startup(ctx: Context):
-    ctx.logger.info("📅 Appointment Agent is live")
+agent = Agent()
 
-# Build the prompt to send to the ASI agent
-async def prompting(query: str):
-    return f"The user needs assistance with appointment-related tasks: {query}. Suggest helpful steps like scheduling, modifying, or canceling appointments."
+asi_Address="agent1qvn0t4u5jeyewp9l544mykv639szuhq8dhmatrgfuwqphx20n8jn78m9paa"
 
-# When a Message is received, send a query to the ASI agent
-@agent.on_message(model=Message)
-async def forward_to_asi(ctx: Context, sender: str, msg: Message):
-    ctx.logger.info(f"📨 User query: {msg.query}")
-    prompt = await prompting(msg.query)
-    await ctx.send(ASI_AGENT_ID, ASI1miniRequest(query=prompt))
+async def book(name:str,email:str,duration:int,start:str ):
+    payload = {
+    "attendee": {
+        "language": "en",
+        "name": name,
+        "timeZone": "Asia/Kolkata",
+        "email": email
+    },
+    "start": start,
+    "lengthInMinutes": duration,
+    "eventTypeId": CAL_EVENT_ID,
+    }
+    headers = {
+    "cal-api-version": "2024-08-13",
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {CAL_API_KEY}"
+    }
 
-# When the ASI agent responds, send the result back to the CLI agent
+    response = requests.request("POST", CAL_API_URL, json=payload, headers=headers)
+    if response.status_code == 200:
+        return response.json()
+
+
+@agent.on_message(model=AppointmentRequest)
+async def startup(ctx: Context,sender:str, msg: AppointmentRequest):
+    ctx.logger.info(f"Agent {agent.address} started.")
+    ctx.storage.set("senderAddress", sender)
+    ctx.storage.set("name", msg.name)
+    ctx.storage.set("email", msg.email)
+    ctx.storage.set("duration", msg.duration)
+    ctx.logger.info(f"Agent {agent.address} received message: {msg}")
+    ctx.logger.info(f"Agent {agent.address} received message: {msg.startTimeDate}")
+    ctx.logger.info(f"Agent {agent.address} received message: {msg.duration}")
+    ctx.logger.info(f"Agent {agent.address} received message: {msg.email}")
+    await ctx.send(asi_Address, ASI1miniRequest(query=f"Extract the date and time from the following natural language string and return only the start time in ISO 8601 format in IST (e.g., '2025-04-10T16:00:00+05:30'), nothing else: {msg.startTimeDate}"))
+
 @agent.on_message(model=ASI1miniResponse)
 async def handle_asi_response(ctx: Context, sender: str, msg: ASI1miniResponse):
-    await ctx.send(CLI_AGENT_ADDRESS, AppointmentResponse(response=msg.response))
+    ctx.logger.info(f"Received response from {sender}")
+    start = msg.response
+    name=ctx.storage.get("name")
+    email=ctx.storage.get("email")
+    duration=ctx.storage.get("duration")
+    senderAddress = ctx.storage.get("senderAddress")
+    response = await book(name,email,duration,start)
+    if response:
+        await ctx.send(senderAddress, AppointmentResponse(response=f"Appointment booked successfully for {name} on {email} for {duration} minutes"))
+    else:
+        await ctx.send(senderAddress, AppointmentResponse(response="Failed to book appointment"))
 
-# Run the agent
+
+
 if __name__ == "__main__":
     agent.run()
