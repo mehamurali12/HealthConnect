@@ -1,46 +1,45 @@
 from uagents import Agent, Context, Model
-from uagents.setup import fund_agent_if_low
 
 class Message(Model):
     query: str
     response: str = None
 
-class ASIRequest(Model):
+class SymptomResponse(Model):
+    response: str
+
+class ASI1miniRequest(Model):
     query: str
 
-class ASIResponse(Model):
+class ASI1miniResponse(Model):
     response: str
 
 ASI_AGENT_ID = "agent1qvn0t4u5jeyewp9l544mykv639szuhq8dhmatrgfuwqphx20n8jn78m9paa"
-PENDING_REQUESTS = {}
+CLI_AGENT_ADDRESS = "agent1qv3dag4483k5dv4wkcncy65xpyrq4hgwk6nvuf0xzrhfz33cxaqj6xpg9c7"
 
 agent = Agent(
     name="HealthConnectSymptomAgent",
     seed="symptom_seed_phrase",
     port=8003,
     endpoint=["http://localhost:8003/submit"],
-    mailbox=True,
+    mailbox=True
 )
-
-fund_agent_if_low(str(agent.wallet.address()))
 
 @agent.on_event("startup")
 async def startup(ctx: Context):
     ctx.logger.info("🤒 Symptom Agent is live")
 
+async def prompting(query: str):
+    return f"Based on the following symptoms, {query}, suggest possible causes and recommend next steps or actions the user should take, such as home remedies, consulting a doctor, or emergency care."
+
 @agent.on_message(model=Message)
 async def forward_to_asi(ctx: Context, sender: str, msg: Message):
     ctx.logger.info(f"📨 User query: {msg.query}")
-    PENDING_REQUESTS[msg.query] = sender
-    await ctx.send(ASI_AGENT_ID, ASIRequest(query=msg.query))
+    prompt = await prompting(msg.query)
+    await ctx.send(ASI_AGENT_ID, ASI1miniRequest(query=prompt))
 
-@agent.on_message(model=ASIResponse)
-async def handle_asi_response(ctx: Context, sender: str, msg: ASIResponse):
-    for q in PENDING_REQUESTS:
-        if q.lower() in msg.response.lower():
-            await ctx.send(PENDING_REQUESTS[q], Message(query=q, response=msg.response))
-            del PENDING_REQUESTS[q]
-            break
+@agent.on_message(model=ASI1miniResponse)
+async def handle_asi_response(ctx: Context, sender: str, msg: ASI1miniResponse):
+    await ctx.send(CLI_AGENT_ADDRESS, SymptomResponse(response=msg.response))
 
 if __name__ == "__main__":
     agent.run()
