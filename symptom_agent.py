@@ -1,33 +1,46 @@
 from uagents import Agent, Context, Model
 from uagents.setup import fund_agent_if_low
 
-# Define a message model for incoming queries.
 class Message(Model):
     query: str
+    response: str = None
 
-# Initialize the Symptom Agent.
+class ASIRequest(Model):
+    query: str
+
+class ASIResponse(Model):
+    response: str
+
+ASI_AGENT_ID = "agent1qvn0t4u5jeyewp9l544mykv639szuhq8dhmatrgfuwqphx20n8jn78m9paa"
+PENDING_REQUESTS = {}
+
 agent = Agent(
     name="HealthConnectSymptomAgent",
-    seed="symptom_seed_phrase",  # Replace with a secure seed in production.
+    seed="symptom_seed_phrase",
     port=8003,
-    endpoint=["http://localhost:8003"]
+    endpoint=["http://localhost:8003/submit"],
+    mailbox=True,
 )
 
-# Fund the agent if its wallet balance is low.
 fund_agent_if_low(str(agent.wallet.address()))
 
 @agent.on_event("startup")
-async def startup_function(ctx: Context):
-    ctx.logger.info(f"Hello, I'm {agent.name} and I'm ready to check symptoms.")
+async def startup(ctx: Context):
+    ctx.logger.info("🤒 Symptom Agent is live")
 
-# Handle incoming messages using the on_message decorator.
-@agent.on_message(Message)
-async def handle_message(ctx: Context, sender: str, msg: Message):
-    ctx.logger.info(f"Received query from {sender}: {msg.query}")
-    response_text = (
-        "Symptom Agent: Based on your symptoms, please monitor your condition and consider seeking professional advice if it worsens."
-    )
-    return {"response": response_text}
+@agent.on_message(model=Message)
+async def forward_to_asi(ctx: Context, sender: str, msg: Message):
+    ctx.logger.info(f"📨 User query: {msg.query}")
+    PENDING_REQUESTS[msg.query] = sender
+    await ctx.send(ASI_AGENT_ID, ASIRequest(query=msg.query))
+
+@agent.on_message(model=ASIResponse)
+async def handle_asi_response(ctx: Context, sender: str, msg: ASIResponse):
+    for q in PENDING_REQUESTS:
+        if q.lower() in msg.response.lower():
+            await ctx.send(PENDING_REQUESTS[q], Message(query=q, response=msg.response))
+            del PENDING_REQUESTS[q]
+            break
 
 if __name__ == "__main__":
     agent.run()
