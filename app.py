@@ -1,118 +1,82 @@
-# app.py
+# app.py - Streamlit frontend for HealthConnect using mailbox-enabled agents
 import streamlit as st
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
-from langchain.chat_models import ChatOpenAI
-import os
-import time
-import requests
+import asyncio
+from uagents import Model
+from uagents.query import send_sync_message
 
-# Set your OpenAI API key (for your LLM usage)
-os.environ['OPENAI_API_KEY'] = 'OPENAI_API_KEY'
-# Read your Fetch.ai API key from the environment
-FETCHAI_API_KEY = os.getenv('FETCHAI_API_KEY')
+# ✅ Agent IDs (replace with actual agent IDs printed in terminal if needed)
+APPOINTMENT_AGENT_ID = "agent1qtlfxcc0hyqu8eylgvl82nak4kwdyzjg7gl0l74cxl5zqejpnwxrz9lmnje"  # From terminal
+SYMPTOM_AGENT_ID     = "agent1qv2fzh42mjjsjw8kwed5c4supyc804ghylla3xfm9t7tunx4e44k23u9x68"
+MEDICATION_AGENT_ID  = "agent1qw79p6rjdxpf9436f4lfe6dcw89ljrchy3pcc5fuysy6r77v8ndyqqc9eta"
 
-# Define a prompt template for general health queries
-prompt_template = """
-You are HealthConnect, a friendly and knowledgeable healthcare assistant.
-Your role is to provide medically specific guidance on general health concerns.
-User Query: {user_input}
-Remember: Provide clear, medically-informed responses that may include advice such as monitoring symptoms, over-the-counter suggestions, or recommendations to seek professional care when needed.
-Always include a disclaimer that this information is for informational purposes only and is not a substitute for professional medical advice.
-Response:
-"""
-template = PromptTemplate(input_variables=["user_input"], template=prompt_template)
+# ✅ Message model (shared)
+class Message(Model):
+    query: str
+    response: str = None
 
-# Initialize the LLM chain with ChatOpenAI
-llm = ChatOpenAI(temperature=0.7, model="gpt-3.5-turbo")
-chain = LLMChain(llm=llm, prompt=template)
+# ✅ Streamlit UI
+st.set_page_config(page_title="HealthConnect", page_icon="🩺")
+st.title("🩺 HealthConnect - Your AI Healthcare Assistant")
 
-# Define common headers including your Fetch.ai API key if required by the endpoint
-headers = {
-    "Authorization": f"Bearer {FETCHAI_API_KEY}",
-    "Content-Type": "application/json"
-}
+st.markdown("""
+Enter your question or request below. Based on the type, it will be routed to:
+- 🤒 Symptom Agent
+- 💊 Medication Agent
+- 📅 Appointment Agent
 
-# Example endpoints: if you're connecting via Agentverse,
-# replace these with the actual public URLs provided by Agentverse.
-APPOINTMENT_AGENT_URL = "http://localhost:8001/submit"  # or the Agentverse URL
-MEDICATION_AGENT_URL  = "http://localhost:8002/submit"
-SYMPTOM_AGENT_URL     = "http://localhost:8003/submit"
+_All agents use the Fetch.ai ASI-1 LLM for intelligent responses._
+""")
 
-def route_to_appointment_agent(user_input):
-    st.info("Routing to HealthConnect Appointment Agent...")
+if 'conversation' not in st.session_state:
+    st.session_state.conversation = []
+
+with st.form("query_form", clear_on_submit=True):
+    user_input = st.text_input("Enter your health query:")
+    submit = st.form_submit_button("Submit")
+
+# ✅ Async-safe agent message sending
+def send_to_agent(agent_id: str, query: str) -> str:
+    async def _send():
+        msg = Message(query=query)
+        status = await send_sync_message(agent_id, msg, timeout=10)
+        if hasattr(status, "message") and isinstance(status.message, Message):
+            return status.message.response or "⚠️ Agent responded with no content."
+        return "⚠️ Agent did not deliver a valid response."
+
     try:
-        response = requests.post(APPOINTMENT_AGENT_URL, json={"query": user_input}, headers=headers)
-        if response.status_code == 200:
-            json_response = response.json()
-            return json_response.get("response", "No response from Appointment Agent")
-        else:
-            return f"Error: Received status code {response.status_code} from Appointment Agent."
+        return asyncio.run(_send())
+    except RuntimeError:
+        return asyncio.get_event_loop().run_until_complete(_send())
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"⚠️ Exception: {str(e)}"
 
-def route_to_medication_agent(user_input):
-    st.info("Routing to HealthConnect Medication Agent...")
-    try:
-        response = requests.post(MEDICATION_AGENT_URL, json={"query": user_input}, headers=headers)
-        if response.status_code == 200:
-            json_response = response.json()
-            return json_response.get("response", "No response from Medication Agent")
-        else:
-            return f"Error: Received status code {response.status_code} from Medication Agent."
-    except Exception as e:
-        return f"Error: {str(e)}"
+# ✅ Router based on keywords
+def route_query(query: str) -> str:
+    q = query.lower()
 
-def route_to_symptom_agent(user_input):
-    st.info("Routing to HealthConnect Symptom Agent...")
-    try:
-        response = requests.post(SYMPTOM_AGENT_URL, json={"query": user_input}, headers=headers)
-        if response.status_code == 200:
-            json_response = response.json()
-            return json_response.get("response", "No response from Symptom Agent")
-        else:
-            return f"Error: Received status code {response.status_code} from Symptom Agent."
-    except Exception as e:
-        return f"Error: {str(e)}"
+    if any(word in q for word in ["appointment", "book", "schedule", "reschedule"]):
+        st.info("📅 Routing to Appointment Agent")
+        return send_to_agent(APPOINTMENT_AGENT_ID, query)
 
-def process_query(user_input):
-    lower_query = user_input.lower()
-    if "appointment" in lower_query:
-        return route_to_appointment_agent(user_input)
-    elif "medication" in lower_query or "reminder" in lower_query:
-        return route_to_medication_agent(user_input)
-    elif "symptom" in lower_query:
-        return route_to_symptom_agent(user_input)
+    elif any(word in q for word in ["medication", "pill", "reminder", "take"]):
+        st.info("💊 Routing to Medication Agent")
+        return send_to_agent(MEDICATION_AGENT_ID, query)
+
+    elif any(word in q for word in ["symptom", "pain", "cough", "fever", "headache", "feel", "sick", "cold", "throat", "nausea"]):
+        st.info("🤒 Routing to Symptom Agent")
+        return send_to_agent(SYMPTOM_AGENT_ID, query)
+
     else:
-        return chain.run(user_input=user_input)
+        st.info("🤖 Routing to Symptom Agent (fallback)")
+        return send_to_agent(SYMPTOM_AGENT_ID, query)
 
-def main():
-    st.title("HealthConnect Healthcare Assistant")
-    st.markdown(
-        "**Disclaimer:** This bot provides medically informed guidance for general health concerns and scheduling convenience. It is not a substitute for professional medical advice."
-    )
+# ✅ Handle submission
+if submit and user_input:
+    with st.spinner("Routing your query to the right agent..."):
+        response = route_query(user_input)
+        st.session_state.conversation.append(("You", user_input))
+        st.session_state.conversation.append(("HealthConnect", response))
 
-    if 'conversation' not in st.session_state:
-        st.session_state.conversation = []
-
-    with st.form(key="chat_form", clear_on_submit=True):
-        user_input = st.text_input("Enter your health query here:")
-        submit_button = st.form_submit_button(label="Submit")
-
-    if submit_button and user_input:
-        with st.spinner("Processing your request..."):
-            response = process_query(user_input)
-        st.session_state.conversation.append(("user", user_input))
-        st.session_state.conversation.append(("assistant", response))
-
-    # Display the conversation history (most recent first)
-    if hasattr(st, "chat_message"):
-        for speaker, message in reversed(st.session_state.conversation):
-            with st.chat_message(speaker):
-                st.markdown(message)
-    else:
-        for speaker, message in reversed(st.session_state.conversation):
-            st.markdown(f"**{speaker.title()}:** {message}")
-
-if __name__ == "__main__":
-    main()
+# ✅ Chat display
+for speaker, message in reversed(st.session_state.conversation):
+    st.markdown(f"**{speaker}:** {message}")
