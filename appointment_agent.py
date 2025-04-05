@@ -1,31 +1,54 @@
 from uagents import Agent, Context, Model
 from uagents.setup import fund_agent_if_low
 
-# Define a message model for incoming queries.
+# Message model
 class Message(Model):
     query: str
+    response: str = None
 
-# Initialize the Appointment Agent.
+# ASI request/response models
+class ASIRequest(Model):
+    query: str
+
+class ASIResponse(Model):
+    response: str
+
+# ASI-1 Mini Agent (LLM-powered)
+ASI_AGENT_ID = "agent1qvn0t4u5jeyewp9l544mykv639szuhq8dhmatrgfuwqphx20n8jn78m9paa"
+
+# Track query-to-sender mapping
+PENDING_REQUESTS = {}
+
+# Initialize Appointment Agent on port 8010
 agent = Agent(
     name="HealthConnectAppointmentAgent",
-    seed="appointment_seed_phrase",  # Replace with a secure seed in production.
-    port=8001,
-    endpoint=["http://localhost:8001"]
+    seed="appointment_seed_phrase",
+    port=8010,
+    endpoint=["http://localhost:8010/submit"],
+    mailbox=True,
 )
 
-# Fund the agent if its wallet balance is low.
 fund_agent_if_low(str(agent.wallet.address()))
 
 @agent.on_event("startup")
-async def startup_function(ctx: Context):
-    ctx.logger.info(f"Hello, I'm {agent.name} and I'm ready to schedule appointments.")
+async def startup(ctx: Context):
+    ctx.logger.info("📅 Appointment Agent is live")
+    ctx.logger.info(f"🆔 Agent Address: {agent.address}")
 
-# Handle incoming messages using the on_message decorator.
-@agent.on_message(Message)
-async def handle_message(ctx: Context, sender: str, msg: Message):
-    ctx.logger.info(f"Received query from {sender}: {msg.query}")
-    response_text = "Appointment Agent: I suggest scheduling an appointment at 3 PM tomorrow."
-    return {"response": response_text}
+@agent.on_message(model=Message)
+async def forward_to_asi(ctx: Context, sender: str, msg: Message):
+    ctx.logger.info(f"📨 User query: {msg.query}")
+    PENDING_REQUESTS[msg.query] = sender
+    await ctx.send(ASI_AGENT_ID, ASIRequest(query=msg.query))
+
+@agent.on_message(model=ASIResponse)
+async def handle_asi_response(ctx: Context, sender: str, msg: ASIResponse):
+    for q in list(PENDING_REQUESTS.keys()):
+        if q.lower() in msg.response.lower():
+            await ctx.send(PENDING_REQUESTS[q], Message(query=q, response=msg.response))
+            ctx.logger.info(f"📤 Response sent for query: {q}")
+            del PENDING_REQUESTS[q]
+            break
 
 if __name__ == "__main__":
     agent.run()
