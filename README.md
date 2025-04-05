@@ -1,97 +1,97 @@
-# 🩺 HealthConnect AI - Multi-Agent Healthcare Assistant
 
-HealthConnect is a multi-agent AI healthcare assistant powered by [Fetch.ai's](https://fetch.ai) **Agentverse** and the **ASI-1 Mini LLM agent**. It routes queries through intelligent micro-agents for personalized responses.
+# HealthConnect: AI-Powered Healthcare Assistant with Fetch.ai uAgents
 
----
+HealthConnect is a modular, AI-powered healthcare assistant built using the Fetch.ai uAgents framework. It allows users to interact with specialized agents for symptoms, medications, and appointments — all through a command-line interface (CLI). These agents communicate asynchronously via Agentverse.
 
-## 🚀 Features
+## Features
 
-- 🤒 Symptom Checker Agent (port 8003)
-- 💊 Medication Reminder Agent (port 8004)
-- 📅 Appointment Scheduler Agent (port 8010)
-- 🧠 All agents use the ASI-1 Mini LLM for intelligent replies
-- 💬 Frontend powered by Streamlit
+- Natural language interface for healthcare queries
+- Modular agent-based design
+- Asynchronous messaging using the uAgents mailbox system
+- AI-powered backend responses using the ASI-1 Mini inference agent
+- Clean CLI interface with real-time feedback
 
----
-
-## 🧱 Architecture
-
-```mermaid
-graph TD;
-    UI[Streamlit UI]
-    UI --> SymptomAgent
-    UI --> MedicationAgent
-    UI --> AppointmentAgent
-    SymptomAgent --> ASI
-    MedicationAgent --> ASI
-    AppointmentAgent --> ASI
-    ASI["ASI-1 Mini LLM Agent - Fetch.ai Hosted"]
+## Architecture Overview
 
 ```
-
----
-
-## 📁 Project Structure
-
-```
-HealthConnectAI/
-│
-├── symptom_agent.py
-├── medication_agent.py
-├── appointment_agent.py
-├── app.py (Streamlit frontend)
-├── requirements.txt
-├── /agent_logs
-└── README.md (this file)
+User (CLI)
+   │
+   └──> app.py (CLI Agent)
+         │
+         ├──> symptom_agent.py ───> ASI Agent ─┐
+         ├──> medication_agent.py ──> ASI Agent ┤
+         └──> appointment_agent.py ─> ASI Agent ┘
+                     │
+                  <──┘ (response sent back to CLI)
 ```
 
----
+## How It Works
 
-## ⚙️ Setup
+1. User submits a health-related query through the CLI.
+2. The CLI (app.py) routes the query to the appropriate agent based on keywords.
+3. The agent constructs a prompt and sends it to the ASI-1 Mini inference agent.
+4. ASI agent generates a smart response.
+5. The agent returns the response back to the CLI.
+6. The CLI displays the result to the user.
 
-### 1. Clone & Install Dependencies
+## Getting Started
+
+### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/healthconnect-ai.git
-cd healthconnect-ai
-python -m venv .venv
-source .venv/bin/activate
+git clone https://github.com/your-username/healthconnect.git
+cd healthconnect
+```
+
+### 2. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Run Agents (Each in a New Terminal)
+### 3. Run the Agents
+
+Each agent must be started in its own terminal:
 
 ```bash
-# Symptom Agent (port 8003)
-SSL_CERT_FILE=$(python -m certifi) python symptom_agent.py
-
-# Medication Agent (port 8004)
-SSL_CERT_FILE=$(python -m certifi) python medication_agent.py
-
-# Appointment Agent (port 8010)
-SSL_CERT_FILE=$(python -m certifi) python appointment_agent.py
+python symptom_agent.py
+python medication_agent.py
+python appointment_agent.py
 ```
 
-### 3. Run Streamlit App
+### 4. Run the CLI
 
 ```bash
-streamlit run app.py
+python app.py
 ```
 
----
+Then enter queries like:
 
-## 🌐 Agentverse Deployment
+```
+I have a sore throat and fever.
+Remind me to take my medicine at 8 PM.
+Book a follow-up appointment for next week.
+```
 
-Each agent can also be deployed directly via [Agentverse](https://agentverse.ai) with `mailbox=True` and proper `/submit` endpoints. Use the generated agent address to connect with your frontend.
+## Project Structure
 
----
+```
+healthconnect/
+├── app.py                   # CLI agent for sending queries and printing responses
+├── appointment_agent.py     # Processes appointment-related queries and talks to ASI agent
+├── medication_agent.py      # Handles medication reminders and queries
+├── symptom_agent.py         # Processes symptom analysis requests
+```
 
-## 📄 License
+## Status
 
-This project is part of the Fetch.ai Innovation Lab. For non-commercial use only.
+- [x] CLI agent connected to Agentverse agents
+- [x] Functional symptom, medication, and appointment agents
+- [x] AI-generated replies using ASI-1 Mini
+- [ ] Optional: Web-based UI with Streamlit (future)
+- [ ] Optional: Integration with calendars or health APIs
 
----
+## Acknowledgments
 
-## 🤝 Contributing
-
-PRs and feature ideas are welcome. Feel free to fork and enhance!
+- [Fetch.ai](https://fetch.ai) for the uAgents framework and Agentverse infrastructure
+- ASI-1 Mini agent for backend AI responses
