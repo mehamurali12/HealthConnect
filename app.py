@@ -1,82 +1,81 @@
-# app.py - Streamlit frontend for HealthConnect using mailbox-enabled agents
-import streamlit as st
+from uagents import Agent, Context, Model
 import asyncio
-from uagents import Model
-from uagents.query import send_sync_message
 
-# ✅ Agent IDs (replace with actual agent IDs printed in terminal if needed)
-APPOINTMENT_AGENT_ID = "agent1qtlfxcc0hyqu8eylgvl82nak4kwdyzjg7gl0l74cxl5zqejpnwxrz9lmnje"  # From terminal
-SYMPTOM_AGENT_ID     = "agent1qv2fzh42mjjsjw8kwed5c4supyc804ghylla3xfm9t7tunx4e44k23u9x68"
-MEDICATION_AGENT_ID  = "agent1qw79p6rjdxpf9436f4lfe6dcw89ljrchy3pcc5fuysy6r77v8ndyqqc9eta"
-
-# ✅ Message model (shared)
+# Shared input message model
 class Message(Model):
     query: str
     response: str = None
 
-# ✅ Streamlit UI
-st.set_page_config(page_title="HealthConnect", page_icon="🩺")
-st.title("🩺 HealthConnect - Your AI Healthcare Assistant")
+# Response models from other agents
+class SymptomResponse(Model):
+    response: str
 
-st.markdown("""
-Enter your question or request below. Based on the type, it will be routed to:
-- 🤒 Symptom Agent
-- 💊 Medication Agent
-- 📅 Appointment Agent
+class MedicationResponse(Model):
+    response: str
 
-_All agents use the Fetch.ai ASI-1 LLM for intelligent responses._
-""")
+class AppointmentResponse(Model):
+    response: str
 
-if 'conversation' not in st.session_state:
-    st.session_state.conversation = []
+# Response queue
+response_queue = asyncio.Queue()
 
-with st.form("query_form", clear_on_submit=True):
-    user_input = st.text_input("Enter your health query:")
-    submit = st.form_submit_button("Submit")
+# CLI Agent
+cli_agent = Agent(
+    name="CLIFrontendAgent",
+    seed="cli_agent_seed_phrase",
+    mailbox=True,
+)
 
-# ✅ Async-safe agent message sending
-def send_to_agent(agent_id: str, query: str) -> str:
-    async def _send():
-        msg = Message(query=query)
-        status = await send_sync_message(agent_id, msg, timeout=10)
-        if hasattr(status, "message") and isinstance(status.message, Message):
-            return status.message.response or "⚠️ Agent responded with no content."
-        return "⚠️ Agent did not deliver a valid response."
+# Catch SymptomResponse
+@cli_agent.on_message(model=SymptomResponse)
+async def symptom_response(ctx: Context, sender: str, msg: SymptomResponse):
+    await response_queue.put((sender, msg.response))
 
-    try:
-        return asyncio.run(_send())
-    except RuntimeError:
-        return asyncio.get_event_loop().run_until_complete(_send())
-    except Exception as e:
-        return f"⚠️ Exception: {str(e)}"
+# Catch MedicationResponse
+@cli_agent.on_message(model=MedicationResponse)
+async def medication_response(ctx: Context, sender: str, msg: MedicationResponse):
+    await response_queue.put((sender, msg.response))
 
-# ✅ Router based on keywords
+# Catch AppointmentResponse
+@cli_agent.on_message(model=AppointmentResponse)
+async def appointment_response(ctx: Context, sender: str, msg: AppointmentResponse):
+    await response_queue.put((sender, msg.response))
+
+# Input prompt loop
+@cli_agent.on_event("startup")
+async def startup(ctx: Context):
+    print("🩺 HealthConnect CLI is running!")
+    print(f"Your agent address: {cli_agent.address}")
+    print("Type your health query below (type 'exit' to quit):")
+
+    while True:
+        user_input = input("🧑 You: ").strip()
+        if user_input.lower() in ["exit", "quit"]:
+            print("👋 Exiting CLI.")
+            break
+
+        target_agent = route_query(user_input)
+        msg = Message(query=user_input)
+
+        try:
+            await ctx.send(target_agent, msg)
+            print(f"📨 Sent message to {target_agent}. Waiting for response...\n")
+
+            sender, response = await response_queue.get()
+            print(f"📬 Received response from {sender}: {response}\n")
+
+        except Exception as e:
+            print(f"❌ Error sending message: {e}")
+
+# Simple keyword-based router
 def route_query(query: str) -> str:
     q = query.lower()
+    if any(word in q for word in ["appointment", "book", "schedule"]):
+        return "agent1qtlfxcc0hyqu8eylgvl82nak4kwdyzjg7gl0l74cxl5zqejpnwxrz9lmnje"
+    elif any(word in q for word in ["medication", "pill", "reminder"]):
+        return "agent1qw79p6rjdxpf9436f4lfe6dcw89ljrchy3pcc5fuysy6r77v8ndyqqc9eta"
+    return "agent1qv2fzh42mjjsjw8kwed5c4supyc804ghylla3xfm9t7tunx4e44k23u9x68"
 
-    if any(word in q for word in ["appointment", "book", "schedule", "reschedule"]):
-        st.info("📅 Routing to Appointment Agent")
-        return send_to_agent(APPOINTMENT_AGENT_ID, query)
-
-    elif any(word in q for word in ["medication", "pill", "reminder", "take"]):
-        st.info("💊 Routing to Medication Agent")
-        return send_to_agent(MEDICATION_AGENT_ID, query)
-
-    elif any(word in q for word in ["symptom", "pain", "cough", "fever", "headache", "feel", "sick", "cold", "throat", "nausea"]):
-        st.info("🤒 Routing to Symptom Agent")
-        return send_to_agent(SYMPTOM_AGENT_ID, query)
-
-    else:
-        st.info("🤖 Routing to Symptom Agent (fallback)")
-        return send_to_agent(SYMPTOM_AGENT_ID, query)
-
-# ✅ Handle submission
-if submit and user_input:
-    with st.spinner("Routing your query to the right agent..."):
-        response = route_query(user_input)
-        st.session_state.conversation.append(("You", user_input))
-        st.session_state.conversation.append(("HealthConnect", response))
-
-# ✅ Chat display
-for speaker, message in reversed(st.session_state.conversation):
-    st.markdown(f"**{speaker}:** {message}")
+# Run it
+if __name__ == "__main__":
+    cli_agent.run()
