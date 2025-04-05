@@ -25,7 +25,8 @@ graph TD;
     SymptomAgent --> ASI
     MedicationAgent --> ASI
     AppointmentAgent --> ASI
-    ASI[ASI-1 Mini LLM Agent (Fetch.ai Hosted)]
+    ASI["ASI-1 Mini LLM Agent - Fetch.ai Hosted"]
+
 ```
 
 ---
